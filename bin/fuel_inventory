@@ -1,0 +1,53 @@
+#!/usr/bin/python
+
+import fuelclient
+import argparse
+import os
+import json
+
+# Default location within Fuel
+os.environ['FUELCLIENT_CUSTOM_SETTINGS'] = "~/.config/fuel/fuel_client.yaml"
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--list', action="store_true")
+parser.add_argument('--host')
+args = parser.parse_args()
+
+clusters = {}
+meta = {'hostvars': {}}
+output = {'localhost': { 'ansible_connection': 'local' }}
+
+node_client = fuelclient.get_client('node')
+env_client = fuelclient.get_client('environment')
+all_nodes = node_client.get_all()
+all_envs = env_client.get_all()
+
+for node in all_nodes:
+    if "cluster_%s" % node['cluster'] not in output:
+        output["cluster_%s" % node['cluster']] = {}
+        output["cluster_%s" % node['cluster']]['hosts'] = [node['hostname']]
+    else:
+        output["cluster_%s" % node['cluster']]['hosts'].append(node['hostname'])
+
+    meta['hostvars'][node['hostname']] = {'ansible_host': node['ip']}
+    for label in node['labels'].keys():
+        meta['hostvars'][node['hostname']][label] = node['labels'][label]
+    for env in all_envs:
+        if env['id'] == node['cluster']:
+            meta['hostvars'][node['hostname']]['environment_name'] = env['name']
+
+    for role in node['roles']:
+        if not role in output:
+            output[role] = {}
+            output[role]['hosts'] = [node['hostname']]
+        else:
+            output[role]['hosts'].append(node['hostname'])
+
+output['_meta'] = meta
+
+if args.list:
+    print json.dumps(output)
+
+if args.host:
+    print json.dumps(meta['hostvars'][args.host])
+
